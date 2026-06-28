@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>رابط CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<!-- ── Login ──────────────────────────────────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="logo-ar">رابط</span>
+      <span class="logo-en">CRM</span>
+    </div>
+
+    <!-- Step 1: pick name -->
+    <div id="step-name">
+      <p class="login-label" data-i18n="login_who"></p>
+      <div class="name-pills" id="name-pills"></div>
+      <button class="btn-primary" id="btn-next" data-i18n="login_next"></button>
+    </div>
+
+    <!-- Step 2a: enter key (returning user) -->
+    <div id="step-key" class="hidden">
+      <p class="login-label"><span id="greeting-name"></span></p>
+      <p class="login-sublabel" data-i18n="login_enter_key"></p>
+      <input type="password" id="input-key" class="login-input" autocomplete="current-password" />
+      <p class="login-error hidden" id="key-error" data-i18n="login_wrong_key"></p>
+      <button class="btn-primary" id="btn-login" data-i18n="login_enter"></button>
+      <button class="btn-ghost" id="btn-back-key" data-i18n="login_back"></button>
+    </div>
+
+    <!-- Step 2b: set key (first time) -->
+    <div id="step-set" class="hidden">
+      <p class="login-label" data-i18n="login_set_title"></p>
+      <p class="login-sublabel" data-i18n="login_set_sub"></p>
+      <input type="password" id="input-new-key"     class="login-input" data-i18n-placeholder="login_new_key" />
+      <input type="password" id="input-confirm-key" class="login-input" data-i18n-placeholder="login_confirm_key" />
+      <p class="login-error hidden" id="set-error"></p>
+      <button class="btn-primary" id="btn-set" data-i18n="login_set_btn"></button>
+      <button class="btn-ghost"   id="btn-back-set" data-i18n="login_back"></button>
+    </div>
+
+    <button class="lang-toggle-login" id="lang-toggle-login"></button>
+  </div>
+</div>
+
+<!-- ── App ────────────────────────────────────────────────────────────────── -->
+<div id="app" class="hidden">
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sb-logo">
+      <span class="sb-logo-ar">رابط</span>
+      <span class="sb-logo-sub">CRM</span>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-section-label" data-i18n="team_label"></div>
+      <div class="team-grid" id="team-grid"></div>
+    </div>
+
+    <div class="sb-divider"></div>
+
+    <div class="sb-section">
+      <div class="sb-section-label" data-i18n="pipeline_label"></div>
+      <div id="pipeline-stats"></div>
+    </div>
+
+    <div class="sb-divider"></div>
+
+    <div class="sb-followup" id="sb-followup"></div>
+
+    <div class="sb-divider"></div>
+
+    <nav class="sb-nav">
+      <button class="nav-btn nav-btn-primary" id="btn-add" data-i18n="add"></button>
+      <button class="nav-btn" id="btn-export"   data-i18n="export"></button>
+      <button class="nav-btn" id="btn-settings" data-i18n="settings"></button>
+      <button class="nav-btn nav-btn-dim" id="btn-lang"></button>
+    </nav>
+
+    <div class="sb-bottom">
+      <div class="drive-badge" id="drive-badge"></div>
+      <div class="sb-user" id="sb-user"></div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main id="main">
+    <div id="topbar">
+      <div class="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input type="text" id="search-input" class="search-input" data-i18n-placeholder="search" />
+      </div>
+      <select id="filter-status" class="filter-select"></select>
+      <select id="filter-industry" class="filter-select"></select>
+      <div class="topbar-right">
+        <span id="total-count" class="total-count"></span>
+        <button class="tbl-action-btn" id="btn-edit"   data-i18n="edit"></button>
+        <button class="tbl-action-btn danger" id="btn-delete" data-i18n="delete"></button>
+      </div>
+    </div>
+
+    <div id="table-wrap">
+      <table id="companies-table">
+        <thead id="tbl-head"></thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+      <div id="empty-state" class="hidden" data-i18n="no_results"></div>
+    </div>
+
+    <div id="statusbar">
+      <span id="sbar-msg"></span>
+    </div>
+  </main>
+</div>
+
+<!-- ── Company Modal ──────────────────────────────────────────────────────── -->
+<div id="modal-overlay" class="hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span id="modal-title"></span>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Settings Modal ─────────────────────────────────────────────────────── -->
+<div id="settings-overlay" class="hidden">
+  <div class="modal-card settings-card">
+    <div class="modal-header">
+      <span data-i18n="settings"></span>
+      <button class="modal-close" id="settings-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="field-label" data-i18n="settings_change_key"></p>
+      <p class="field-hint" data-i18n="settings_key_hint"></p>
+      <input type="password" id="s-current-key" class="field-input" data-i18n-placeholder="settings_current" />
+      <input type="password" id="s-new-key"     class="field-input" data-i18n-placeholder="settings_new" />
+      <input type="password" id="s-confirm-key" class="field-input" data-i18n-placeholder="settings_confirm" />
+      <p class="login-error hidden" id="settings-error"></p>
+      <div class="modal-footer">
+        <button class="btn-primary" id="btn-save-key" data-i18n="save"></button>
+        <button class="btn-ghost"   id="btn-logout"   data-i18n="logout"></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Context Menu ───────────────────────────────────────────────────────── -->
+<div id="ctx-menu" class="hidden"></div>
+
+<!-- ── Toast ─────────────────────────────────────────────────────────────── -->
+<div id="toast" class="hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CONFIG  ← Replace these two lines with your Supabase project values
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co'
-const SUPABASE_KEY = 'YOUR_ANON_KEY'
+const SUPABASE_URL = 'https://uirdvnhafmuqtcsobyhr.supabase.co'
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpcmR2bmhhZm11cXRjc29ieWhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1OTkzNjUsImV4cCI6MjA5ODE3NTM2NX0.HJnj1Z_Gwx22yUNQbPLmL5igUv6kkLKZjyOTp_QNwXw'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TEAM = ['Omar', 'Taim Kiwan', 'Taim Al Saadi']

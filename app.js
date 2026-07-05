@@ -202,9 +202,17 @@ async function checkAuth() {
   const stored = localStorage.getItem('crm_session')
   if (stored) {
     try {
-      state.user = JSON.parse(stored)
-      await bootApp()
-      return
+      const s = JSON.parse(stored)
+      // Old sessions (before the security fix) had no key stored — force re-login.
+      if (s && s.name && s.key) {
+        const { data: ok } = await sb.rpc('crm_login', { p_name: s.name, p_key_hash: s.key })
+        if (ok) {
+          state.user = { name: s.name, key: s.key }
+          await bootApp()
+          return
+        }
+      }
+      localStorage.removeItem('crm_session')
     } catch { localStorage.removeItem('crm_session') }
   }
   showLoginScreen()
@@ -239,9 +247,9 @@ function buildLoginStep1() {
 }
 
 async function loginStep2(name) {
-  const { data } = await sb.from('users').select('key_hash').eq('name', name).maybeSingle()
+  const { data: status } = await sb.rpc('crm_user_status', { p_name: name })
 
-  if (data) {
+  if (status === 'exists') {
     // Returning user
     showStep('step-key')
     qs('#greeting-name').textContent = name
@@ -252,8 +260,9 @@ async function loginStep2(name) {
     qs('#btn-login').onclick = async () => {
       const key = qs('#input-key').value
       const hash = await sha256(key)
-      if (hash === data.key_hash) {
-        state.user = { name }
+      const { data: ok } = await sb.rpc('crm_login', { p_name: name, p_key_hash: hash })
+      if (ok) {
+        state.user = { name, key: hash }
         localStorage.setItem('crm_session', JSON.stringify(state.user))
         qs('#login-screen').classList.add('hidden')
         await bootApp()
@@ -282,9 +291,9 @@ async function loginStep2(name) {
       if (k1 !== k2)      { errEl.textContent = t('keys_no_match');  errEl.classList.remove('hidden'); return }
       errEl.classList.add('hidden')
       const hash = await sha256(k1)
-      const { error } = await sb.from('users').insert({ name, key_hash: hash })
-      if (error) { errEl.textContent = error.message; errEl.classList.remove('hidden'); return }
-      state.user = { name }
+      const { data: ok, error } = await sb.rpc('crm_register', { p_name: name, p_key_hash: hash })
+      if (error || !ok) { errEl.textContent = t('login_wrong_key'); errEl.classList.remove('hidden'); return }
+      state.user = { name, key: hash }
       localStorage.setItem('crm_session', JSON.stringify(state.user))
       qs('#login-screen').classList.add('hidden')
       await bootApp()
@@ -315,64 +324,55 @@ async function bootApp() {
   applyLang()
   setupKeyboard()
   await loadCompanies()
-  subscribeRealtime()
-  setInterval(updateDriveBadge, 20000)
-  updateDriveBadge()
+  // Public realtime is disabled by the security migration, so poll for changes
+  // made by other team members instead.
+  setInterval(() => loadCompanies(true), 15000)
 }
 
 // ── Data ──────────────────────────────────────────────────────────────────────
-async function loadCompanies() {
-  const { data, error } = await sb.from('companies').select('*').order('updated_at', { ascending: false })
-  if (!error) state.companies = data || []
+let _lastSig = ''
+
+function setDriveBadge(ok) {
+  const badge = qs('#drive-badge')
+  if (!badge) return
+  badge.textContent = ok ? t('drive_on') : t('drive_off')
+  badge.className = 'drive-badge ' + (ok ? 'drive-on' : 'drive-off')
+}
+
+async function loadCompanies(poll = false) {
+  const { data, error } = await sb.rpc('crm_list_companies', {
+    p_name: state.user.name, p_key_hash: state.user.key,
+  })
+  if (error) { setDriveBadge(false); return }
+  setDriveBadge(true)
+  state.companies = data || []
+
+  // Detect a change made by someone else (list is ordered newest-first).
+  const top = state.companies[0]
+  const sig = top ? top.id + '|' + top.updated_at : ''
+  if (poll && sig && sig !== _lastSig && top.modified_by && top.modified_by !== state.user.name) {
+    showToast(`↺  ${t('refreshed')} — ${top.modified_by}`)
+  }
+  _lastSig = sig
   render()
 }
 
 async function saveCompany(payload, id = null) {
-  const { id: _rid, ...data } = payload   // never send id in the update body
-  data.modified_by = state.user.name
-  data.updated_at  = new Date().toISOString()
-  if (!id) data.created_at = new Date().toISOString()
-
-  if (id) {
-    const { error } = await sb.from('companies').update(data).eq('id', id)
-    if (error) { sbar('Error: ' + error.message); return false }
-  } else {
-    const { error } = await sb.from('companies').insert(data)
-    if (error) { sbar('Error: ' + error.message); return false }
-  }
+  const { id: _rid, ...data } = payload   // never send id in the body
+  const { error } = await sb.rpc('crm_upsert_company', {
+    p_name: state.user.name, p_key_hash: state.user.key,
+    p_id: id, p_data: data,
+  })
+  if (error) { sbar('Error: ' + error.message); return false }
   await loadCompanies()
   return true
 }
 
 async function removeCompany(id) {
-  const { error } = await sb.from('companies').delete().eq('id', id)
+  const { error } = await sb.rpc('crm_delete_company', {
+    p_name: state.user.name, p_key_hash: state.user.key, p_id: id,
+  })
   if (!error) await loadCompanies()
-}
-
-// ── Real-time ─────────────────────────────────────────────────────────────────
-function subscribeRealtime() {
-  sb.channel('crm').on('postgres_changes', { event: '*', schema: 'public', table: 'companies' },
-    async payload => {
-      // Skip if we triggered this change ourselves (updated_at within 2s)
-      const changedBy = payload.new?.modified_by || payload.old?.modified_by
-      if (changedBy && changedBy !== state.user?.name) {
-        await loadCompanies()
-        showToast(`↺  ${t('refreshed')} — ${changedBy}`)
-      }
-    }
-  ).subscribe()
-}
-
-async function updateDriveBadge() {
-  try {
-    const { error } = await sb.from('users').select('name').limit(1)
-    const badge = qs('#drive-badge')
-    badge.textContent = error ? t('drive_off') : t('drive_on')
-    badge.className = 'drive-badge ' + (error ? 'drive-off' : 'drive-on')
-  } catch {
-    qs('#drive-badge').className = 'drive-badge drive-off'
-    qs('#drive-badge').textContent = t('drive_off')
-  }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -812,16 +812,20 @@ qs('#btn-save-key').addEventListener('click', async () => {
   const k2  = qs('#s-confirm-key').value
   const errEl = qs('#settings-error')
 
-  const { data } = await sb.from('users').select('key_hash').eq('name', state.user.name).single()
-  const curHash = await sha256(cur)
-  if (!data || data.key_hash !== curHash) {
-    errEl.textContent = t('login_wrong_key'); errEl.classList.remove('hidden'); return
-  }
   if (k1.length < 4) { errEl.textContent = t('keys_too_short'); errEl.classList.remove('hidden'); return }
   if (k1 !== k2)     { errEl.textContent = t('keys_no_match');  errEl.classList.remove('hidden'); return }
 
+  const curHash = await sha256(cur)
   const newHash = await sha256(k1)
-  await sb.from('users').update({ key_hash: newHash }).eq('name', state.user.name)
+  const { data: ok } = await sb.rpc('crm_change_key', {
+    p_name: state.user.name, p_old_hash: curHash, p_new_hash: newHash,
+  })
+  if (!ok) {
+    errEl.textContent = t('login_wrong_key'); errEl.classList.remove('hidden'); return
+  }
+  // Keep the in-memory + stored session in sync with the new key.
+  state.user.key = newHash
+  localStorage.setItem('crm_session', JSON.stringify(state.user))
   errEl.classList.add('hidden')
   qs('#settings-overlay').classList.add('hidden')
   sbar(t('saved'))

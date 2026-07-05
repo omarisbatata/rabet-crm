@@ -1,3 +1,9 @@
+-- ⚠️ DO NOT RUN THIS FILE ANYMORE. It is insecure and kept only for reference.
+-- The "using (true)" policies below let anyone with the public anon key read,
+-- edit and delete the whole database. Run schema-security.sql instead — it
+-- replaces everything here with locked-down, key-checked access.
+--
+-- (Original, insecure schema below.)
 -- Run this in your Supabase project → SQL Editor
 
 -- Users (auth)

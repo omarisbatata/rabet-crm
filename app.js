@@ -94,6 +94,15 @@ en: {
   saved: 'Saved.',
   add_title: 'Add Company', edit_title: 'Edit Company',
   lang_switch: 'العربية',
+  inbox_nav: '✉ Inbox',
+  inbox_title: 'Unlinked Emails',
+  inbox_empty: 'No unlinked emails.',
+  inbox_select_hint: 'Select an email to view it.',
+  inbox_from: 'From', inbox_to: 'To',
+  inbox_link_btn: 'Link',
+  inbox_linked_msg: 'Linked to company.',
+  correspondence_label: 'Correspondence',
+  correspondence_empty: 'No linked emails yet.',
 },
 ar: {
   login_who: 'من أنت؟',
@@ -148,6 +157,15 @@ ar: {
   saved: 'تم الحفظ.',
   add_title: 'إضافة شركة', edit_title: 'تعديل شركة',
   lang_switch: 'English',
+  inbox_nav: '✉ البريد',
+  inbox_title: 'رسائل غير مرتبطة',
+  inbox_empty: 'لا توجد رسائل غير مرتبطة.',
+  inbox_select_hint: 'اختر رسالة لعرضها.',
+  inbox_from: 'من', inbox_to: 'إلى',
+  inbox_link_btn: 'ربط',
+  inbox_linked_msg: 'تم الربط بالشركة.',
+  correspondence_label: 'المراسلات',
+  correspondence_empty: 'لا توجد رسائل مرتبطة بعد.',
 },
 }
 
@@ -156,6 +174,8 @@ let sb
 let state = {
   user:      null,    // { name }
   companies: [],
+  emails:    [],       // unlinked emails
+  selectedEmailId: null,
   lang:      localStorage.getItem('crm_lang') || 'en',
   selected:  null,    // selected company id
   filters:   { status: -1, industry: '', owner: '', query: '' },
@@ -324,9 +344,10 @@ async function bootApp() {
   applyLang()
   setupKeyboard()
   await loadCompanies()
+  await refreshInboxBadge()
   // Public realtime is disabled by the security migration, so poll for changes
   // made by other team members instead.
-  setInterval(() => loadCompanies(true), 15000)
+  setInterval(() => { loadCompanies(true); refreshInboxBadge() }, 15000)
 }
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -374,6 +395,131 @@ async function removeCompany(id) {
   })
   if (!error) await loadCompanies()
 }
+
+// ── Inbox (unlinked emails) ──────────────────────────────────────────────────
+async function loadUnlinkedEmails() {
+  const { data, error } = await sb.rpc('crm_list_unlinked_emails', {
+    p_name: state.user.name, p_key_hash: state.user.key,
+  })
+  if (error) { sbar('Error: ' + error.message); return }
+  state.emails = data || []
+}
+
+async function refreshInboxBadge() {
+  await loadUnlinkedEmails()
+  const badge = qs('#inbox-badge')
+  if (badge) {
+    if (state.emails.length) { badge.textContent = String(state.emails.length); badge.classList.remove('hidden') }
+    else badge.classList.add('hidden')
+  }
+  if (!qs('#inbox-overlay').classList.contains('hidden')) renderInboxList()
+}
+
+async function showInbox() {
+  qs('#inbox-overlay').classList.remove('hidden')
+  state.selectedEmailId = null
+  await loadUnlinkedEmails()
+  renderInboxList()
+  renderInboxDetail()
+}
+
+function hideInbox() {
+  qs('#inbox-overlay').classList.add('hidden')
+}
+
+function renderInboxList() {
+  const list = qs('#inbox-list')
+  list.innerHTML = ''
+  if (!state.emails.length) {
+    list.innerHTML = `<div class="inbox-empty">${t('inbox_empty')}</div>`
+    return
+  }
+  state.emails.forEach(e => {
+    const item = el('div', 'inbox-item' + (state.selectedEmailId === e.id ? ' selected' : ''))
+    item.innerHTML = `
+      <div class="inbox-item-from">${esc(e.from_address)}</div>
+      <div class="inbox-item-subject" title="${esc(e.subject)}">${esc(e.subject || '(no subject)')}</div>
+      <div class="inbox-item-date">${(e.received_at||'').slice(0,16).replace('T',' ')}</div>
+    `
+    item.addEventListener('click', () => {
+      state.selectedEmailId = e.id
+      renderInboxList()
+      renderInboxDetail()
+    })
+    list.appendChild(item)
+  })
+}
+
+function renderInboxDetail() {
+  const wrap = qs('#inbox-detail')
+  const e = state.emails.find(x => x.id === state.selectedEmailId)
+  if (!e) { wrap.innerHTML = `<div class="inbox-empty">${t('inbox_select_hint')}</div>`; return }
+
+  const companyOpts = state.companies
+    .slice().sort((a,b) => a.name.localeCompare(b.name))
+    .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
+
+  wrap.innerHTML = `
+    <div class="inbox-detail-header">
+      <div class="inbox-detail-subject">${esc(e.subject || '(no subject)')}</div>
+      <div class="inbox-detail-meta">${t('inbox_from')}: ${esc(e.from_address)}</div>
+      <div class="inbox-detail-meta">${t('inbox_to')}: ${esc(e.to_addresses)}</div>
+      <div class="inbox-detail-meta">${(e.received_at||'').slice(0,16).replace('T',' ')}</div>
+    </div>
+    <div class="inbox-link-row">
+      <select class="field-select" id="inbox-link-select">${companyOpts}</select>
+      <button class="btn-primary" id="inbox-link-btn" style="width:auto;padding:9px 16px;">${t('inbox_link_btn')}</button>
+    </div>
+    <iframe class="inbox-body-frame" id="inbox-body-frame" sandbox=""></iframe>
+  `
+
+  const frame = qs('#inbox-body-frame')
+  frame.srcdoc = e.body_html
+    ? e.body_html
+    : `<pre style="font-family:inherit;white-space:pre-wrap;padding:12px;margin:0;">${esc(e.body_text || '')}</pre>`
+
+  qs('#inbox-link-btn').addEventListener('click', async () => {
+    const companyId = parseInt(qs('#inbox-link-select').value, 10)
+    if (!companyId) return
+    const { error } = await sb.rpc('crm_link_email', {
+      p_name: state.user.name, p_key_hash: state.user.key,
+      p_email_id: e.id, p_company_id: companyId,
+    })
+    if (error) { sbar('Error: ' + error.message); return }
+    showToast(t('inbox_linked_msg'))
+    state.selectedEmailId = null
+    await loadUnlinkedEmails()
+    renderInboxList()
+    renderInboxDetail()
+    const badge = qs('#inbox-badge')
+    if (badge) {
+      if (state.emails.length) { badge.textContent = String(state.emails.length); badge.classList.remove('hidden') }
+      else badge.classList.add('hidden')
+    }
+  })
+}
+
+async function loadCompanyEmails(companyId) {
+  const { data, error } = await sb.rpc('crm_list_company_emails', {
+    p_name: state.user.name, p_key_hash: state.user.key, p_company_id: companyId,
+  })
+  const wrap = qs('#company-emails-list')
+  if (!wrap) return
+  if (error || !data || !data.length) {
+    wrap.innerHTML = `<div class="field-hint">${t('correspondence_empty')}</div>`
+    return
+  }
+  wrap.innerHTML = data.map(e => `
+    <div class="company-email-row">
+      <span class="company-email-dir ${e.direction}">${e.direction === 'inbound' ? '↓' : '↑'}</span>
+      <span class="company-email-subj" title="${esc(e.subject)}">${esc(e.subject || '(no subject)')}</span>
+      <span class="company-email-date">${(e.received_at||'').slice(0,10)}</span>
+    </div>
+  `).join('')
+}
+
+qs('#inbox-close').addEventListener('click', hideInbox)
+qs('#inbox-overlay').addEventListener('click', e => { if (e.target === qs('#inbox-overlay')) hideInbox() })
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
@@ -520,6 +666,7 @@ function buildSidebar() {
 
   qs('#sb-user').textContent = state.user?.name || ''
   qs('#btn-add').onclick      = () => showModal(null)
+  qs('#btn-inbox').onclick    = showInbox
   qs('#btn-export').onclick   = exportCSV
   qs('#btn-settings').onclick = showSettings
   qs('#btn-lang').textContent = t('lang_switch')
@@ -672,6 +819,11 @@ function showModal(company) {
       <label class="field-label">${t('f_notes')}</label>
       <textarea class="field-textarea" id="f-notes">${esc(company?.notes||'')}</textarea>
     </div>
+    ${company ? `
+    <div class="field-group">
+      <label class="field-label">${t('correspondence_label')}</label>
+      <div id="company-emails-list" class="company-emails-list"></div>
+    </div>` : ''}
     <div class="modal-footer">
       <button class="btn-primary" id="btn-modal-save">${t('save')}</button>
       <button class="btn-ghost"   id="btn-modal-cancel">${t('cancel')}</button>
@@ -721,6 +873,8 @@ function showModal(company) {
   qs('#btn-modal-cancel').addEventListener('click', hideModal)
   overlay.classList.remove('hidden')
   qs('#f-name').focus()
+
+  if (company) loadCompanyEmails(company.id)
 }
 
 function hideModal() {

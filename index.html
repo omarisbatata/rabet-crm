@@ -81,6 +81,10 @@
 
     <nav class="sb-nav">
       <button class="nav-btn nav-btn-primary" id="btn-add" data-i18n="add"></button>
+      <button class="nav-btn nav-btn-inbox" id="btn-inbox">
+        <span data-i18n="inbox_nav"></span>
+        <span class="nav-badge hidden" id="inbox-badge"></span>
+      </button>
       <button class="nav-btn" id="btn-export"   data-i18n="export"></button>
       <button class="nav-btn" id="btn-settings" data-i18n="settings"></button>
       <button class="nav-btn nav-btn-dim" id="btn-lang"></button>
@@ -151,6 +155,20 @@
         <button class="btn-primary" id="btn-save-key" data-i18n="save"></button>
         <button class="btn-ghost"   id="btn-logout"   data-i18n="logout"></button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Inbox / Unlinked Emails Modal ──────────────────────────────────────── -->
+<div id="inbox-overlay" class="hidden">
+  <div class="modal-card inbox-card">
+    <div class="modal-header">
+      <span data-i18n="inbox_title"></span>
+      <button class="modal-close" id="inbox-close">✕</button>
+    </div>
+    <div class="inbox-body">
+      <div class="inbox-list" id="inbox-list"></div>
+      <div class="inbox-detail" id="inbox-detail"></div>
     </div>
   </div>
 </div>
